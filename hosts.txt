@@ -1,0 +1,8 @@
+PROPOSERS 2
+ACCEPTORS 3
+LEARNERS 44
+localhost 10000 con
+localhost 10001 con
+localhost 10002 con
+localhost 10003 con
+localhost 10004 cli
