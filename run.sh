@@ -3,9 +3,9 @@
 pkill -f python
 
 # Update hosts.txt (must match consensus drivers list below this section)
-echo "PROPOSERS 2" > hosts.txt
-echo "ACCEPTORS 3" >> hosts.txt
-echo "LEARNERS 44" >> hosts.txt
+echo "PROPOSERS 1" > hosts.txt
+echo "ACCEPTORS 2" >> hosts.txt
+echo "LEARNERS 1" >> hosts.txt
 echo "localhost 10000 con" >> hosts.txt
 echo "localhost 10001 con" >> hosts.txt
 echo "localhost 10002 con" >> hosts.txt

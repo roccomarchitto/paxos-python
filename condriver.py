@@ -32,4 +32,7 @@ with open("./hosts.txt","r") as f:
 
 if __name__ == "__main__":
     node = ConsensusNode((PROPOSERS,ACCEPTORS,LEARNERS),HOSTS,UID)
+    node.InitializeNode()
+    print("Can start algorithm now for",UID)
+    node.Run()
 

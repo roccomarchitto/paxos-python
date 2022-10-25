@@ -1,6 +1,6 @@
-PROPOSERS 2
-ACCEPTORS 3
-LEARNERS 44
+PROPOSERS 1
+ACCEPTORS 2
+LEARNERS 1
 localhost 10000 con
 localhost 10001 con
 localhost 10002 con

@@ -52,7 +52,7 @@ class ClientNode():
                     message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
                     message = pickle.loads(message)
 
-                    # TODO: Handlem essage
+                    # TODO: Handle message
                     print("Message received:", message)
             finally:
                 udp_socket.close()
