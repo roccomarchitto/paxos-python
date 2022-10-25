@@ -32,3 +32,6 @@ with open("./hosts.txt","r") as f:
 
 if __name__ == "__main__":
     node = ClientNode((PROPOSERS,ACCEPTORS,LEARNERS),HOSTS,UID,VAL)
+    node.InitializeNode() # Wait to receive list of proposers
+    # Now with the list of proposers, we can choose one and send a proposal
+    node.Set(VAL) # Attempt to set the global variable to VAL

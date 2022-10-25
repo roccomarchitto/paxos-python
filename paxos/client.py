@@ -28,31 +28,98 @@ class ClientNode():
             v (int): The value the client wants to set the global variable to
         """
         print(f"Client launched with v={v}")
-        self.v = v
+        self.v = int(v)
         PROPOSERS = mode_counts[0]
         ACCEPTORS = mode_counts[1]
         LEARNERS = mode_counts[2]
+        self.hosts = hosts
         self.host_info = hosts[uid] # host_info is a list [hostname, port, consensus or client]
+        self.uid = uid
         self.port = int(self.host_info[1])
         print(f'\nCLILIB CALLED for {uid} w/ val {self.v}:\t{PROPOSERS},{ACCEPTORS},{LEARNERS},{self.host_info}')
-
-        self.udp_listen_for_proposers()
+        self.chosen_proposer = -1
+        #self.udp_listen_for_proposers()
     
-    def udp_listen_for_proposers(self) -> None:
+    def Set(self, VAL) -> None:
         """
-        Waits for proposers to say they are ready for proposals.
+        Forwards VAL to a proposer for use in Paxos
         """
-        # TODO - wait for *all* proposers
+        time.sleep(0.1) # Wait a short time for other nodes to prep
+        VAL = int(VAL)
+        assert(self.v == VAL)
+        #print(f"Client {self.uid} forward VALUE {VAL} to proposer {self.hosts[self.chosen_proposer]}")
+        self.udp_send("FWD",VAL,self.hosts[self.chosen_proposer][0],self.hosts[self.chosen_proposer][1])
+        self.wait() # Wait for a value to arrive
+    
+    def wait(self) -> None:
+        """
+        Waits for a decided on value to arrive
+        """
+        # TODO - while loop?
         with socket(AF_INET, SOCK_DGRAM) as udp_socket:
             try:
                 udp_socket.bind(("", self.port))
-                while True:
-                    # Receive and deserialize messages
-                    # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
-                    message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
-                    message = pickle.loads(message)
-
-                    # TODO: Handle message
-                    print("Message received:", message)
+                # Receive and deserialize message
+                # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, PORT, and SENDERID
+                message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
+                message = pickle.loads(message)
+                if message["HEADER"] == "SET":
+                    chosen_value = message["MESSAGE"]
+                    print("\nFinal message chosen:",chosen_value)
+                else:
+                    raise Exception("Message sent before start to client, or corrupted/incorrect.")
+                
             finally:
                 udp_socket.close()
+
+    def InitializeNode(self) -> None:
+        """
+        Waits for proposers to say they are ready for proposals.
+        """
+        with socket(AF_INET, SOCK_DGRAM) as udp_socket:
+            try:
+                udp_socket.bind(("", self.port))
+                # Receive and deserialize message
+                # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
+                message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
+                message = pickle.loads(message)
+                if message["HEADER"] == "START":
+                    roles_tuple = message["MESSAGE"]
+                    proposers = roles_tuple[0]
+                    print("Proposers list received:",proposers)
+                    
+                    self.chosen_proposer = proposers[0] # TODO Allow user to choose proposer
+
+                    print("Client now preparing to submit proposals...")
+                else:
+                    raise Exception("Message sent before start to client, or corrupted/incorrect.")
+                
+            finally:
+                udp_socket.close()
+
+
+
+    def udp_send(self, header: str, message, recipient: str, port: int) -> None:
+        """
+        All outgoing messages are sent through this handler.
+
+        Parameters:
+            header (str): The header that defines the message type
+            message (str): The raw string message to send
+            recipient (str): The hostname of the recipient
+            port (int): The port of the recipient 
+        """
+
+        # Define and serialize the message to byte form before sending
+        message =   {
+                        'HEADER': header,
+                        'MESSAGE': message,
+                        'RECIPIENT': recipient,
+                        'PORT': int(port)
+                    }
+        message = pickle.dumps(message)
+
+        # Send the message over UDP
+        with socket(AF_INET, SOCK_DGRAM) as udp_socket:
+            udp_socket.sendto(message, (recipient, int(port)))
+    

@@ -5,7 +5,7 @@ pkill -f python
 # Update hosts.txt (must match consensus drivers list below this section)
 echo "PROPOSERS 1" > hosts.txt
 echo "ACCEPTORS 2" >> hosts.txt
-echo "LEARNERS 1" >> hosts.txt
+echo "LEARNERS 1" >> hosts.txt # Recall last con is always a learner, so learners must be >= 1
 echo "localhost 10000 con" >> hosts.txt
 echo "localhost 10001 con" >> hosts.txt
 echo "localhost 10002 con" >> hosts.txt
