@@ -17,6 +17,7 @@ import random
 
 BUFFER_SIZE = 4096
 
+DEBUG = False
 
 class ClientNode():
     def __init__(self, mode_counts: tuple[int], hosts: List[List[str]], uid: int, v: int):
@@ -27,7 +28,7 @@ class ClientNode():
             uid (int): Unique identifier for this host
             v (int): The value the client wants to set the global variable to
         """
-        print(f"Client launched with v={v}")
+        if DEBUG: print(f"Client launched with v={v}")
         self.v = int(v)
         PROPOSERS = mode_counts[0]
         ACCEPTORS = mode_counts[1]
@@ -36,7 +37,7 @@ class ClientNode():
         self.host_info = hosts[uid] # host_info is a list [hostname, port, consensus or client]
         self.uid = uid
         self.port = int(self.host_info[1])
-        print(f'\nCLILIB CALLED for {uid} w/ val {self.v}:\t{PROPOSERS},{ACCEPTORS},{LEARNERS},{self.host_info}')
+        if DEBUG: print(f'\nCLILIB CALLED for {uid} w/ val {self.v}:\t{PROPOSERS},{ACCEPTORS},{LEARNERS},{self.host_info}')
         self.chosen_proposer = -1
         #self.udp_listen_for_proposers()
     
@@ -67,7 +68,7 @@ class ClientNode():
                     if message["HEADER"] == "SET":
                         chosen_value = message["MESSAGE"]
                         #time.sleep(.1)
-                        print("\n\n\nFinal message chosen:",chosen_value,"\n\n\n")
+                        print("Final message received by client from learner:",chosen_value)
                     else:
                         raise Exception("Message sent before start to client, or corrupted/incorrect.")
                 
@@ -88,11 +89,12 @@ class ClientNode():
                 if message["HEADER"] == "START":
                     roles_tuple = message["MESSAGE"]
                     proposers = roles_tuple[0]
-                    print("Proposers list received:",proposers)
+                    #print("Proposers list received:",proposers)
                     
-                    self.chosen_proposer = proposers[0] # TODO Allow user to choose proposer
+                    self.chosen_proposer = proposers[random.choice([0,1,2])] # TODO Allow user to choose proposer
+                    #print(self.chosen_proposer)
 
-                    print("Client now preparing to submit proposals...")
+                    #print("Client now preparing to submit proposals...")
                 else:
                     raise Exception("Message sent before start to client, or corrupted/incorrect.")
                 

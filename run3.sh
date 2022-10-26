@@ -5,18 +5,14 @@ pkill -f python
 
 # Update hosts.txt (must match consensus drivers list below this section)
 echo "PROPOSERS 1" > hosts.txt
-echo "ACCEPTORS 3" >> hosts.txt
+echo "ACCEPTORS 1" >> hosts.txt
 echo "LEARNERS 1" >> hosts.txt # Recall last con is always a learner, so learners must be >= 1
 echo "localhost 10000 con" >> hosts.txt
 echo "localhost 10001 con" >> hosts.txt
 echo "localhost 10002 con" >> hosts.txt
-echo "localhost 10003 con" >> hosts.txt
-echo "localhost 10004 con" >> hosts.txt
 # Add the clients below
-echo "localhost 10005 cli" >> hosts.txt
-echo "localhost 10006 cli" >> hosts.txt
-echo "localhost 10007 cli" >> hosts.txt
-echo "localhost 10008 cli" >> hosts.txt
+echo "localhost 10003 cli" >> hosts.txt
+echo "localhost 10004 cli" >> hosts.txt
 
 #############################################################
 
@@ -26,9 +22,7 @@ echo "localhost 10008 cli" >> hosts.txt
 
 python3 condriver.py 0 false &
 python3 condriver.py 1 false &
-python3 condriver.py 2 false &
-python3 condriver.py 3 false &
-python3 condriver.py 4 true &
+python3 condriver.py 2 true &
 
 # Ensure the last condriver has "true" set for its final flag 
 # and that it is run after all the others
@@ -37,7 +31,5 @@ python3 condriver.py 4 true &
 # Note that proposers cannot be determined here since they are decided amongst the processes themselves during runtime
 # Argument format is [UID] [V] where V is the value the client wants to assign the global variable
 
-python3 clidriver.py 5 55 &
-python3 clidriver.py 6 56 &
-python3 clidriver.py 7 57 &
-python3 clidriver.py 8 230
+python3 clidriver.py 3 210 &
+python3 clidriver.py 4 1114 &

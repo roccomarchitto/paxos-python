@@ -1,11 +1,19 @@
-PROPOSERS 1
-ACCEPTORS 2
-LEARNERS 1
+PROPOSERS 3
+ACCEPTORS 5
+LEARNERS 3
 localhost 10000 con
 localhost 10001 con
 localhost 10002 con
 localhost 10003 con
-localhost 10004 cli
-localhost 10005 cli
-localhost 10006 cli
-localhost 10007 cli
+localhost 10004 con
+localhost 10005 con
+localhost 10006 con
+localhost 10007 con
+localhost 10008 con
+localhost 10009 con
+localhost 10010 con
+localhost 10011 cli
+localhost 10012 cli
+localhost 10013 cli
+localhost 10014 cli
+localhost 10015 cli
