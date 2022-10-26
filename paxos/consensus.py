@@ -292,6 +292,8 @@ class ConsensusNode(IConsensusNode):
                     """
                     (n1,v,n2) = message["MESSAGE"]
                     if DEBUG: print(f"Ack received at {self.role} {self.uid}: {(n1,v,n2)} with acceptances list {self.acceptances}")
+                    # Important note: If acceptances not counted in phase 1 are found here, they still need to be accounted for
+                    # This can be done with "ghost" messages TODO
                     min_majority = math.floor(len(self.acceptors)/2) + 1 # The minimum number of acceptors that constitutes a majority
                     self.acks.append((n1,v,n2))
                     # Check if majority has been received for n1 being sent in
@@ -302,7 +304,7 @@ class ConsensusNode(IConsensusNode):
                         # The accept message is (v,n)
                         # Here v is the value of the highest-numbered proposal (TODO does this include this ack???)
                         # n is n1
-                        
+
                         # Find highest n ack received
                         # Note that ack[2] is always less than or equal to ack[0] (TODO verify), so only check ack[0]
                         highest_ack = self.acks[0]
@@ -310,9 +312,21 @@ class ConsensusNode(IConsensusNode):
                             if ack[0] > highest_ack[0]:
                                 highest_ack = ack
 
-
-                        accept_req = (highest_ack[1],n1)
-                        self.udp_multicast("ACCEPT",accept_req,self.acceptors)
+                        # If there are accepted values, need to find the highest sequence number (ghost messages)
+                        # and send the value associated with it
+                        max_tuple = tuple()
+                        if self.acceptances:
+                            
+                            max_tuple = self.acceptances[0]
+                            for t in self.acceptances:
+                                if t[1] > max_tuple[1]:
+                                    max_tuple = t # (v,n) that must be sent
+                            accept_req = max_tuple
+                            print("BYPASS\n\n\n",accept_req)
+                            self.udp_multicast("ACCEPT",accept_req,self.acceptors)
+                        else:
+                            accept_req = (highest_ack[1],n1)
+                            self.udp_multicast("ACCEPT",accept_req,self.acceptors)
                     
                     
                     
@@ -342,6 +356,8 @@ class ConsensusNode(IConsensusNode):
                         self.udp_multicast("ACCEPT-VALUE",(v,n),self.proposers) # TODO handle
                         self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
                         print(f"{(v,n)} HAS BEEN ACCEPTED")
+                    else:
+                        print(f"Accept request rejected {self.role} (ID {self.uid}): {message}")
 
 
                 if message["HEADER"] == "LEARN":
@@ -388,7 +404,7 @@ class ConsensusNode(IConsensusNode):
             recipient (str): The hostname of the recipient
             port (int): The port of the recipient 
         """
-        time.sleep(0.01)
+        #time.sleep(0.01)
         # Define and serialize the message to byte form before sending
         message =   {
                         'HEADER': header,

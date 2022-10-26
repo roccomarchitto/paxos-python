@@ -67,7 +67,7 @@ class ClientNode():
                     if message["HEADER"] == "SET":
                         chosen_value = message["MESSAGE"]
                         #time.sleep(.1)
-                        print("\nFinal message chosen:",chosen_value)
+                        print("\n\n\nFinal message chosen:",chosen_value,"\n\n\n")
                     else:
                         raise Exception("Message sent before start to client, or corrupted/incorrect.")
                 
