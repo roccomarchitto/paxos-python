@@ -208,14 +208,20 @@ class ConsensusNode(IConsensusNode):
 
                 # Check if a message is being forwarded from a client
                 # This will initiate Paxos phase 1.1
-                if message["HEADER"] == "FWD" and self.role == "PROPOSER":
+                if message["HEADER"] == "FWD":
+                    if self.role != "PROPOSER":
+                        raise Exception("Message sent to incorrect recipient")
+                    """
+                    Pseudocode: Send the proposal (v,n) to each acceptor.
+                    """
                     VAL = message["MESSAGE"]
-                    print(f"Forwarded value received: {VAL}. Beginning Phase 1.1...")
+                    if DEBUG: print(f"Forwarded value received by {self.role} (ID {self.uid}): {VAL}. Beginning Phase 1.1 at seq {self.seq}...\n")
                     msg = (VAL,self.seq)
-                    print(f"Sending {msg} to {self.acceptors}!")
                     self.udp_multicast("PROPOSAL",msg,self.acceptors)
-                    # TODO sequence numbers
-                    # TODO acceptor list
+                    # Increase the sequence number for future messages
+                    # Increasing by len(hosts) keeps sequence numbers disjoint
+                    self.seq += len(self.hosts)
+                    
                 
 
                 if message["HEADER"] == "PROPOSAL":
@@ -235,22 +241,35 @@ class ConsensusNode(IConsensusNode):
                     
                     # First decode the proposal as a tuple (v,n)
                     (v,n) = message["MESSAGE"]
-                    if DEBUG: print(f"An {self.role} (UID {self.uid}) received {v} @ sequence number {n}")
-                    self.proposals.append((v,n)) # TODO check correctness of this logic
+                    if DEBUG: print(f"An {self.role} (ID {self.uid}) received {v} @ seq {n}")
                     # Check if n is the largest sequence number received
-                    greater_proposals = list(filter(lambda x: x[1] > n, self.proposals))
-                    if len(greater_proposals) > 0:
-                        # There is a greater sequence number we have made a promise to, so ignore this one
-                        pass
-                    else: # Make a promise
-                        # We will send an ack, but need to first check if an ACCEPTOR has ACCEPTED A proposal w/ number n' < n
-                        # TODO NOTE IMPORTANT
-                        # use self.acceptances
-                        ack = (n,v,"_")
-                        self.promises.append((v,n))
-                        # TODO udp_send to sender, not localhost
-                        print("SENDING ACK")
-                        self.udp_multicast("ACK",ack,self.proposers)
+                    # The next two lines are for safety purposes
+                    temp = self.promises.copy()
+                    temp.append((v,n))
+                    greater_proposals = list(filter(lambda x: x[1] > n, temp))
+                    if len(greater_proposals) == 0: # There is no greater proposal, so make a promise
+                        # Two cases:
+                        # (1) No accepted value has been seen yet -> send ack(n,v,_)
+                        # (2) An accepted value at n1 < n has been seen -> send ack(n,v,n1)
+                        if self.acceptances:
+                            # If there are accepted values, need to find the highest sequence number
+                            # and send the value associated with it
+                            max_tuple = self.acceptances[0]
+                            for t in self.acceptances:
+                                if t[1] > max_tuple[1]:
+                                    max_tuple = t
+                            ack = (n,max_tuple[0],max_tuple[1]) # Discard old values, replace w/ already accepted values
+                            self.promises.append((max_tuple[0],max_tuple[1])) # TODO is this right?
+                            # Note that (max_tuple[0],max_tuple[1]) corresponds to (vx,nx) of the highest nx accepted
+                            if DEBUG: print("SENDING (n,v,n') ACK")
+                            self.udp_multicast("ACK",ack,self.proposers)
+                        else:    
+                            # No accepted values, so just ack the n and v we were sent
+                            ack = (n,v,"_")
+                            self.promises.append((v,n))
+                            # TODO udp_send to sender, not localhost
+                            if DEBUG: print("SENDING (n,v,_) ACK")
+                            self.udp_multicast("ACK",ack,self.proposers)
                                     
 
 
@@ -259,35 +278,44 @@ class ConsensusNode(IConsensusNode):
                         raise Exception("Message sent to incorrect recipient")
                     """
                     The recipient of this message initiates (or continues) Paxos phase 2.1
-                    An ack(a,b,c) is received from an acceptor and this determines the contents of the proposer's ACCEPT message.
+                    An ack(n,v,n') is received from an acceptor and this determines the contents of the proposer's ACCEPT message.
                     Pseudocode:
                     Store ack(_,_,_) in an ack list.
-                    If ack(n,v (?) TODO ,_) is received from a MAJORITY of acceptors, then send ACCEPT(v,n)
-                    If ack(n,v',n') is received at any time (meaning a value was accepted already)
-                        override v to use v', and send ACCEPT(v',N), where N is the HIGHEST sequence number seen
+                    # TODO is a set needed for majority checking?
+                    Check if attached timestamp n forms a majority. If majority:
+                        Send ACCEPT(v,n) where v is the value of the highest n ack received
+
+                        If ack(n,v,_) is received then send ACCEPT(v,n)
+                        If ack(n,v',n') is received at any time (meaning a value was accepted already)
+                            override v to use v', and send ACCEPT(v',N), where N is the HIGHEST sequence number seen
                     """
                     (n1,v,n2) = message["MESSAGE"]
                     if DEBUG: print(f"Ack received at {self.role} {self.uid}: {(n1,v,n2)}")
                     min_majority = math.floor(len(self.acceptors)/2) + 1 # The minimum number of acceptors that constitutes a majority
                     self.acks.append((n1,v,n2))
-                    
-                    # Check if majority has been received for (n1, v, _)
-                    # TODO review
-                    n1_ack_list = list(filter(lambda x: (x[0]==n1), self.acks))
-                    print("Phase 2.1",min_majority,self.acks,n1_ack_list)
+                    # Check if majority has been received for n1 being sent in
+                    n1_ack_list = list(filter(lambda x: (x[0]==n1 or x[2]==n1), self.acks))
+                    #print("Phase 2.1",min_majority,self.acks,n1_ack_list)
                     if len(n1_ack_list) >= min_majority:
                         print("MAJORITY ACHIEVED BY PROPOSER - SENDING ACCEPT REQUEST TO ALL ACCEPTORS")
-                        # Find if any value was already accepted
-                        accepted = []
+                        # The accept message is (v,n)
+                        # Here v is the value of the highest-numbered proposal (TODO does this include this ack???)
+                        # n is n1
+                        
+                        # Find highest n ack received
+                        # Note that ack[2] is always less than or equal to ack[0] (TODO verify), so only check ack[0]
+                        highest_ack = self.acks[0]
                         for ack in self.acks:
-                            if ack[2] != "_":
-                                pass # TODO
-                                # This means there was an n' that was accepted
-                            else:
-                                # Submit v and n to the acceptors
-                                accept_req = (n1,v)
-                                self.udp_multicast("ACCEPT",accept_req,self.acceptors)
-                    # TODO needs v of most recently accepted value
+                            if ack[0] > highest_ack[0]:
+                                highest_ack = ack
+
+                        
+                        accept_req = (highest_ack[1],n1)
+                        self.udp_multicast("ACCEPT",accept_req,self.acceptors)
+                    
+                    
+                    
+                    
 
 
 
@@ -311,6 +339,7 @@ class ConsensusNode(IConsensusNode):
                     if len(greater_promises) == 0:
                         # Send to the learner since no greater promises were made
                         self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
+                        self.udp_multicast("ACCEPT-VALUE",(v,n),self.proposers) # TODO handle
                         print(f"{(v,n)} HAS BEEN ACCEPTED")
 
 
@@ -387,7 +416,13 @@ class ConsensusNode(IConsensusNode):
                     # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
                     message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
                     message = pickle.loads(message)
-                    self.message_queue.append(message) # TODO mutex
+
+                    # If a proposer is receiving accept messages, bypass queue
+                    if message["HEADER"] == "ACCEPT-VALUE":
+                        print(f"{self.role} (ID {self.uid}) received {message}")
+                        self.acceptances.append(message["MESSAGE"])
+                    else: # Else add to the message queue
+                        self.message_queue.append(message) # TODO mutex
             finally:
                 udp_socket.close()
                     

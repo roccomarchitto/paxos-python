@@ -59,15 +59,17 @@ class ClientNode():
         with socket(AF_INET, SOCK_DGRAM) as udp_socket:
             try:
                 udp_socket.bind(("", self.port))
-                # Receive and deserialize message
-                # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, PORT, and SENDERID
-                message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
-                message = pickle.loads(message)
-                if message["HEADER"] == "SET":
-                    chosen_value = message["MESSAGE"]
-                    print("\nFinal message chosen:",chosen_value)
-                else:
-                    raise Exception("Message sent before start to client, or corrupted/incorrect.")
+                while True:
+                    # Receive and deserialize message
+                    # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, PORT, and SENDERID
+                    message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
+                    message = pickle.loads(message)
+                    if message["HEADER"] == "SET":
+                        chosen_value = message["MESSAGE"]
+                        #time.sleep(.1)
+                        print("\nFinal message chosen:",chosen_value)
+                    else:
+                        raise Exception("Message sent before start to client, or corrupted/incorrect.")
                 
             finally:
                 udp_socket.close()
