@@ -4,9 +4,9 @@
 pkill -f python
 
 # Update hosts.txt (must match consensus drivers list below this section)
-echo "PROPOSERS 3" > hosts.txt
+echo "PROPOSERS 5" > hosts.txt
 echo "ACCEPTORS 5" >> hosts.txt
-echo "LEARNERS 3" >> hosts.txt # Recall last con is always a learner, so learners must be >= 1
+echo "LEARNERS 1" >> hosts.txt # Recall last con is always a learner, so learners must be >= 1
 echo "localhost 10000 con" >> hosts.txt
 echo "localhost 10001 con" >> hosts.txt
 echo "localhost 10002 con" >> hosts.txt
@@ -50,8 +50,8 @@ python3 condriver.py 10 true &
 # Note that proposers cannot be determined here since they are decided amongst the processes themselves during runtime
 # Argument format is [UID] [V] where V is the value the client wants to assign the global variable
 
-python3 clidriver.py 11 55 &
-python3 clidriver.py 12 56 &
-python3 clidriver.py 13 57 &
-python3 clidriver.py 14 57 &
-python3 clidriver.py 15 230 &
+python3 clidriver.py 11 55 0 &
+python3 clidriver.py 12 56 1 &
+python3 clidriver.py 13 57 2 &
+python3 clidriver.py 14 57 3 &
+python3 clidriver.py 15 230 4 &

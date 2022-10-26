@@ -11,10 +11,11 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("uid", help="the unique identifier of the client node")
 parser.add_argument("v", help="value the user wants to assign the global variable")
+parser.add_argument("proposer", help="the proposer the user wants to assign the global variable to")
 args = parser.parse_args()
 VAL = args.v
 UID = int(args.uid)
-
+PROPOSER = int(args.uid)
 
 # Read in the hosts.txt file
 PROPOSERS = -1
@@ -31,7 +32,7 @@ with open("./hosts.txt","r") as f:
 
 
 if __name__ == "__main__":
-    node = ClientNode((PROPOSERS,ACCEPTORS,LEARNERS),HOSTS,UID,VAL)
+    node = ClientNode((PROPOSERS,ACCEPTORS,LEARNERS),HOSTS,UID,VAL,PROPOSER)
     node.InitializeNode() # Wait to receive list of proposers
     # Now with the list of proposers, we can choose one and send a proposal
     node.Set(VAL) # Attempt to set the global variable to VAL

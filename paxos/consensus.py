@@ -6,11 +6,10 @@ Implements the ConsensusNode class (proposer, acceptor, and learner roles in Pax
 TODO: Backoff
 TODO: Failure detection
 TODO: Remove redundant last process flag
-TODO: Clients select their proposers
-TODO: Distinguished learner
 TODO: Cleanup/organization (after done)
 TODO: README (after done)
 TODO: Cleanup
+TODO: Silence run.sh errors
 
 """
 from __future__ import annotations
@@ -89,13 +88,30 @@ class ConsensusNode(IConsensusNode):
         self.hostname = self.host_info[0]
         self.type = self.host_info[2] # either con for consensus node or cli for client node
         self.role = "" # To be populated; either PROPOSER, ACCEPTOR, or LEARNER
-        self.is_leader = False
+        
         self.message_queue = [] # Network messages go here
 
         # Detect if leader w/ list of consensus nodes
         self.con_nodes = list(filter(lambda x: x[2] == "con", self.hosts))
-        if self.uid == len(self.con_nodes)-1:
-            self.is_leader = True
+
+        """
+        Determine the leader for role election (i.e., the highest UID)
+        """
+        # Naive approach, just select max in con_nodes (this works, but doesn't preclude failing nodes)
+        #if self.uid == len(self.con_nodes)-1:
+        #    self.is_leader = True
+        
+        # Leader election approach - embed a ring topology and complete Chang-Roberts
+        self.is_leader = False
+        self.leader_is_chosen = False
+        self.ChangRoberts()
+        
+        while not self.leader_is_chosen:
+            continue
+        print(f"LEADER CONSENSUS: {self.uid},{self.is_leader}")
+        #time.sleep(0.5) # Give a little time so messages are not mismatched
+        #exit(0)
+
         #print(f'\nCONLIB CALLED for {uid}:\t{PROPOSERS},{ACCEPTORS},{LEARNERS},{self.host_info}')
 
         # List of client nodes
@@ -117,7 +133,85 @@ class ConsensusNode(IConsensusNode):
         self.promises = []
         self.acks = []
 
+    def ChangRoberts(self) -> None:
+        """
+        Select a leader based on UIDs using an embedded ring topology.
+        Chang-Roberts is O(n^2) message complexity.
+        Pseudocode:
+        First each process is red and sends a token to its neighbor with its UID.
+        Receive tokens:
+            If red:
+                If a lower token is received, ignore and that token gets removed so it quits.
+                If a higher token is received, set color to black and forward the token
+                If the same ID token is received, set self to leader, terminate algorithm
+            If black:
+                Forward all tokens
+        """
+        # First send a token to the neighbor
+        neighbor_id = (self.uid+1) % len(self.con_nodes)
+        rec_port = self.hosts[neighbor_id][1] # Neighbor's port
+        self.color = "RED";
 
+        # Start the Chang-Roberts listener thread
+        self.crlistener = Thread(target=self.ChangRobertsListener, name=f"crlistener{self.uid}:{self.port}")
+        self.crlistener.start()
+
+        # After a brief wait, forward initial token
+        time.sleep(0.05)
+        self.udp_send("TOKEN",self.uid,"localhost",rec_port)
+
+    def ChangRobertsListener(self) -> None:
+         with socket(AF_INET, SOCK_DGRAM) as udp_socket:
+            try:
+                udp_socket.bind(("", self.port))
+                while True:
+                    """
+                    Pseudocode for listener thread:
+                    Receive tokens:
+                        If red:
+                            If a lower token is received, ignore and that token gets removed so it quits.
+                            If a higher token is received, set color to black and forward the token
+                            If the same ID token is received, set self to leader, terminate algorithm
+                        If black:
+                            Forward all tokens
+                    """
+                    # Receive and deserialize messages
+                    # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
+                    message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
+                    message = pickle.loads(message)
+                    
+                    neighbor_id = (self.uid+1) % len(self.con_nodes)
+                    rec_port = self.hosts[neighbor_id][1] # Neighbor's port
+
+                    # Check if a token was received
+                    if message["HEADER"] != "TOKEN":
+                        raise Exception("Non-token sent in Chang-Roberts!",message)
+                    
+                    if message["MESSAGE"] != "TERM": # If not a termination message, follow Chang-Roberts
+                        token = int(message["MESSAGE"])
+                        if self.color == "BLACK": # Always forward
+                            self.udp_send("TOKEN",self.uid,"localhost",rec_port)
+                        else: # Color is red, so compare token
+                            i = self.uid
+                            j = token
+                            if (j < i):
+                                pass # skip, do nothing
+                            if (j > i):
+                                # send j, set color to black
+                                self.color = "BLACK"
+                                self.udp_send("TOKEN",j,"localhost",rec_port)
+                            if (j == i):
+                                time.sleep(0.1)
+                                self.is_leader = True
+                                self.leader_is_chosen = True
+                                self.udp_multicast("TOKEN","TERM",self.con_nodes)
+                                print(f"{i} IS THE LEADER")
+                    else: # Message is terminate, so exit ChangRoberts
+                        self.leader_is_chosen = True
+                        return
+
+            finally:
+                udp_socket.close()
 
     def InitializeNode(self) -> None:
         global PROPOSERS, ACCEPTORS, LEARNERS
@@ -160,13 +254,19 @@ class ConsensusNode(IConsensusNode):
             with socket(AF_INET, SOCK_DGRAM) as udp_socket:
                 try:
                     udp_socket.bind(("", self.port))
-                    # Receive and deserialize messages
-                    # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
-                    message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
-                    message = pickle.loads(message)
-                    self.role = message["MESSAGE"]
-                    #print(f"Node {self.uid} has accepted role {self.role}")
-                    #print(f"Message received @ {self.uid}:",message)
+                    while True:
+                        
+                        # Receive and deserialize messages
+                        # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
+                        message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
+                        message = pickle.loads(message)
+                        if message["HEADER"] != "ROLE": # Might be a leftover message from leader election
+                            continue
+                        else:
+                            self.role = message["MESSAGE"]
+                            return
+                        #print(f"Node {self.uid} has accepted role {self.role}")
+                        #print(f"Message received @ {self.uid}:",message)
                         
                 finally:
                     udp_socket.close()
@@ -222,7 +322,7 @@ class ConsensusNode(IConsensusNode):
                 # This will initiate Paxos phase 1.1
                 if message["HEADER"] == "FWD":
                     if self.role != "PROPOSER":
-                        raise Exception("Message sent to incorrect recipient")
+                        raise Exception(f"Message sent to incorrect recipient: {message}")
                     """
                     Pseudocode: Send the proposal (v,n) to each acceptor.
                     """
@@ -238,7 +338,7 @@ class ConsensusNode(IConsensusNode):
 
                 if message["HEADER"] == "PROPOSAL":
                     if self.role != "ACCEPTOR":
-                        raise Exception("Message sent to incorrect recipient")
+                        raise Exception(f"Message sent to incorrect recipient: {message}")
                     """
                     The receipt of this message initiates Paxos phase 1.2
                     A message (v,n) w/ message v and sequence number n is received.
@@ -249,6 +349,14 @@ class ConsensusNode(IConsensusNode):
                     If an ACCEPTOR has ACCEPTED a proposal w/ number n' < n, send a promise: ack(n,v1,n')
                         this tells the proposer to send ACCEPT messages w/ value v1 rather than v
                         (alternatively, a nack can be sent)
+                    """
+                    """
+                    #######################
+                    # FAILURE TEST TODO
+                    # Note that w/ 2 acceptors and 1 failing, a "majority" is technically reached among the acceptor, although its value is never relayed to learners
+                    if self.uid == 3 or self.uid == 4 or self.uid == 1:
+                        exit(0)
+                    #######################
                     """
                     # First decode the proposal as a tuple (v,n)
                     (v,n) = message["MESSAGE"]
@@ -265,7 +373,6 @@ class ConsensusNode(IConsensusNode):
                         # (1) No accepted value has been seen yet -> send ack(n,v,_)
                         # (2) An accepted value at n1 < n has been seen -> send ack(n,v,n1)
                         rec_port = self.hosts[message["SENDERID"]][1]
-                        print(rec_port,self.port)
                         if self.acceptances:
                             # If there are accepted values, need to find the highest sequence number
                             # and send the value associated with it
@@ -293,21 +400,20 @@ class ConsensusNode(IConsensusNode):
 
                 if message["HEADER"] == "NACK":
                     if self.role != "PROPOSER":
-                        raise Exception("Message sent to incorrect recipient")
+                        raise Exception(f"Message sent to incorrect recipient: {message}")
                     if BACKOFF: # Note refusing to send more requests is better for performance
                         (v,n) = message["MESSAGE"]
                         #if DEBUG: 
-                        print(f"NACK RECV ON {(v,n)} - RESENDING")
+                        print(f"NACK RECV ON {(v,n)} - RESENDING AFTER TIMEOUT")
                         # Send a message to self to "reforward" from client (retry)
                         # TODO: Backoff
                         time.sleep(random.choice([0.05*x for x in range(20)]))
-                        print("RE",(v,n))
                         self.udp_send("FWD",v,"localhost",self.port) # self on self.port since we are sending to self
 
 
                 if message["HEADER"] == "ACK":
                     if self.role != "PROPOSER":
-                        raise Exception("Message sent to incorrect recipient")
+                        raise Exception(f"Message sent to incorrect recipient: {message}")
                     """
                     The recipient of this message initiates (or continues) Paxos phase 2.1
                     An ack(n,v,n') is received from an acceptor and this determines the contents of the proposer's ACCEPT message.
@@ -367,7 +473,7 @@ class ConsensusNode(IConsensusNode):
 
                 if message["HEADER"] == "ACCEPT":
                     if self.role != "ACCEPTOR":
-                        raise Exception("Message sent to incorrect recipient")
+                        raise Exception(f"Message sent to incorrect recipient: {message}")
                     """
                     The recipient of this message initiates Paxos phase 2.2
                     An ACCEPT(v,n) is accepted unless there is a promise to a sequence number greater than n.
@@ -376,14 +482,6 @@ class ConsensusNode(IConsensusNode):
                     Else accept v and n, and add to the accept list.
                     Short time wait? TODO
                     Forward values to learner
-                    """
-                    """
-                    #######################
-                    # FAILURE TEST TODO
-                    # Note that w/ 2 acceptors and 1 failing, a "majority" is technically reached among the acceptor, although its value is never relayed to learners
-                    if self.uid == 2:
-                        exit(0)
-                    #######################
                     """
 
                     # Reminder - proposals and accept requests are (v,n), acks are (n1,v,n2) format
@@ -397,12 +495,13 @@ class ConsensusNode(IConsensusNode):
                         self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
                         if DEBUG: print(f"{(v,n)} HAS BEEN ACCEPTED")
                     else:
+                        # TODO - possible bug w/ greater promises sometimes not coming through
                         if DEBUG: print(f"Accept request rejected {self.role} (ID {self.uid}): {message}")
 
 
                 if message["HEADER"] == "LEARN":
                     if self.role != "LEARNER":
-                        raise Exception("Message sent to incorrect recipient")
+                        raise Exception(f"Message sent to incorrect recipient: {message}")
                     """
                     The recipient of this message initiates (or continues) Paxos phase 3.
                     It collects accepted values and decides on a majority.

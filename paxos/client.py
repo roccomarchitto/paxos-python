@@ -20,13 +20,15 @@ BUFFER_SIZE = 4096
 DEBUG = False
 
 class ClientNode():
-    def __init__(self, mode_counts: tuple[int], hosts: List[List[str]], uid: int, v: int):
+    def __init__(self, mode_counts: tuple[int], hosts: List[List[str]], uid: int, v: int, proposer: int):
         """
         Params:
             mode_counts (tuple[int]): tuple (proposers,acceptors,learners) of the counts for the 3 different modes
             hosts (List[Lint[int]]): List of lists [hostname, port, consensus or client] for the hosts
             uid (int): Unique identifier for this host
             v (int): The value the client wants to set the global variable to
+            proposer (int): The proposer ID the client wants to send to (note that this is calculated by 
+                            proposer index = (desired ID) modulo (length of proposer))
         """
         if DEBUG: print(f"Client launched with v={v}")
         self.v = int(v)
@@ -36,6 +38,7 @@ class ClientNode():
         self.hosts = hosts
         self.host_info = hosts[uid] # host_info is a list [hostname, port, consensus or client]
         self.uid = uid
+        self.proposer = proposer
         self.port = int(self.host_info[1])
         if DEBUG: print(f'\nCLILIB CALLED for {uid} w/ val {self.v}:\t{PROPOSERS},{ACCEPTORS},{LEARNERS},{self.host_info}')
         self.chosen_proposer = -1
@@ -91,7 +94,9 @@ class ClientNode():
                     proposers = roles_tuple[0]
                     #print("Proposers list received:",proposers)
                     
-                    self.chosen_proposer = proposers[random.choice([0,1,2])] # TODO Allow user to choose proposer
+                    proposer_idx = self.proposer % len(proposers)
+                    print("Chosen proposer idx:",proposer_idx)
+                    self.chosen_proposer = proposers[proposer_idx]
                     #print(self.chosen_proposer)
 
                     #print("Client now preparing to submit proposals...")
