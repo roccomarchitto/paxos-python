@@ -251,6 +251,7 @@ class ConsensusNode(IConsensusNode):
                         # Two cases:
                         # (1) No accepted value has been seen yet -> send ack(n,v,_)
                         # (2) An accepted value at n1 < n has been seen -> send ack(n,v,n1)
+                        print("1.b acceptances:",self.acceptances)
                         if self.acceptances:
                             # If there are accepted values, need to find the highest sequence number
                             # and send the value associated with it
@@ -290,7 +291,7 @@ class ConsensusNode(IConsensusNode):
                             override v to use v', and send ACCEPT(v',N), where N is the HIGHEST sequence number seen
                     """
                     (n1,v,n2) = message["MESSAGE"]
-                    if DEBUG: print(f"Ack received at {self.role} {self.uid}: {(n1,v,n2)}")
+                    if DEBUG: print(f"Ack received at {self.role} {self.uid}: {(n1,v,n2)} with acceptances list {self.acceptances}")
                     min_majority = math.floor(len(self.acceptors)/2) + 1 # The minimum number of acceptors that constitutes a majority
                     self.acks.append((n1,v,n2))
                     # Check if majority has been received for n1 being sent in
@@ -309,7 +310,7 @@ class ConsensusNode(IConsensusNode):
                             if ack[0] > highest_ack[0]:
                                 highest_ack = ack
 
-                        
+
                         accept_req = (highest_ack[1],n1)
                         self.udp_multicast("ACCEPT",accept_req,self.acceptors)
                     
@@ -338,8 +339,8 @@ class ConsensusNode(IConsensusNode):
                     greater_promises = list(filter(lambda x: x[1] > n, self.promises))
                     if len(greater_promises) == 0:
                         # Send to the learner since no greater promises were made
-                        self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
                         self.udp_multicast("ACCEPT-VALUE",(v,n),self.proposers) # TODO handle
+                        self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
                         print(f"{(v,n)} HAS BEEN ACCEPTED")
 
 
@@ -387,7 +388,7 @@ class ConsensusNode(IConsensusNode):
             recipient (str): The hostname of the recipient
             port (int): The port of the recipient 
         """
-
+        time.sleep(0.01)
         # Define and serialize the message to byte form before sending
         message =   {
                         'HEADER': header,
@@ -419,7 +420,7 @@ class ConsensusNode(IConsensusNode):
 
                     # If a proposer is receiving accept messages, bypass queue
                     if message["HEADER"] == "ACCEPT-VALUE":
-                        print(f"{self.role} (ID {self.uid}) received {message}")
+                        print(f"Proposer received acceptance: (ID {self.uid}) received {message}")
                         self.acceptances.append(message["MESSAGE"])
                     else: # Else add to the message queue
                         self.message_queue.append(message) # TODO mutex

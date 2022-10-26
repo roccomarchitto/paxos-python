@@ -10,7 +10,13 @@ echo "localhost 10000 con" >> hosts.txt
 echo "localhost 10001 con" >> hosts.txt
 echo "localhost 10002 con" >> hosts.txt
 echo "localhost 10003 con" >> hosts.txt
+# Add the clients below
 echo "localhost 10004 cli" >> hosts.txt
+echo "localhost 10005 cli" >> hosts.txt
+echo "localhost 10006 cli" >> hosts.txt
+echo "localhost 10007 cli" >> hosts.txt
+
+#############################################################
 
 # Launch all consensus drivers (must match hosts.txt)
 # Argument format is [UID] [IS_LAST_NODE]
@@ -26,6 +32,9 @@ python3 condriver.py 3 true &
 
 # Launch all client drivers
 # Note that proposers cannot be determined here since they are decided amongst the processes themselves during runtime
-# Argument format is [V] where V is the value the client wants to assign the global variable
+# Argument format is [UID] [V] where V is the value the client wants to assign the global variable
 
-python3 clidriver.py 4 55
+python3 clidriver.py 4 55 &
+python3 clidriver.py 5 56 &
+python3 clidriver.py 6 57 &
+python3 clidriver.py 7 230 &
