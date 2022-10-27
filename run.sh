@@ -1,4 +1,6 @@
 #!/bin/bash
+# Simplest Paxos; see other run example files for more comments
+
 pkill -f python 2>/dev/null
 
 echo "PROPOSERS 1" > hosts.txt
