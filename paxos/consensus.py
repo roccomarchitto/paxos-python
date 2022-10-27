@@ -2,17 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Implements the ConsensusNode class (proposer, acceptor, and learner roles in Paxos)
-
-TODO: Backoff
-TODO: Failure detection
-TODO: Remove redundant last process flag
-TODO: Cleanup/organization (after done)
-TODO: README (after done)
-TODO: Cleanup
-TODO: Silence run.sh errors
-
-TODO: Non termination bug
-
 """
 from __future__ import annotations
 import abc
@@ -33,7 +22,7 @@ LEARNERS = -1
 
 DEBUG = False
 
-BACKOFF = True
+BACKOFF = False
 
 class IConsensusNode(abc.ABC):
     """
@@ -53,25 +42,15 @@ class IConsensusNode(abc.ABC):
     
     @abc.abstractmethod
     def InitializeNode(self) -> None:
-        """
-
-        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def Run(self) -> None:
-        """
-
-        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def CleanupNode(self) -> None:
-        """
-
-        """
         raise NotImplementedError
-
 
 
 class ConsensusNode(IConsensusNode):
@@ -94,8 +73,10 @@ class ConsensusNode(IConsensusNode):
         
         self.message_queue = [] # Network messages go here
 
-        # Detect if leader w/ list of consensus nodes
+        # List of consensus nodes
         self.con_nodes = list(filter(lambda x: x[2] == "con", self.hosts))
+        # List of client nodes
+        self.cli_nodes = list(filter(lambda x: x[2] == "cli", self.hosts))
 
         """
         Determine the leader for role election (i.e., the highest UID)
@@ -112,15 +93,8 @@ class ConsensusNode(IConsensusNode):
         while not self.leader_is_chosen:
             continue
         if DEBUG: print(f"LEADER CONSENSUS: {self.uid},{self.is_leader}")
-        #time.sleep(0.5) # Give a little time so messages are not mismatched
-        #exit(0)
-
-        #print(f'\nCONLIB CALLED for {uid}:\t{PROPOSERS},{ACCEPTORS},{LEARNERS},{self.host_info}')
-
-        # List of client nodes
-        self.cli_nodes = list(filter(lambda x: x[2] == "cli", self.hosts))
-
-        # List of each role
+        
+        # List of each role, gets populated later
         self.proposers = []
         self.acceptors = []
         self.learners = []
@@ -129,12 +103,16 @@ class ConsensusNode(IConsensusNode):
         # This forces disjoint sequence number sets
         self.seq = self.uid
 
-        self.acceptances = [] # Acceptors multicast acceptances to learners and proposers
-        # Note that all roles are the same class, so role-specific variables and functions are all handled in the same class
-        # Acceptor variables
-        self.proposals = []
-        self.promises = []
-        self.acks = []
+        self.acceptances = [] # Acceptances received
+        self.proposals = [] # Proposals made
+        self.promises = [] # Promises received
+        self.acks = [] # Acks received
+
+
+
+    """
+    Leader election via Chang-Roberts
+    """
 
     def ChangRoberts(self) -> None:
         """
@@ -208,7 +186,7 @@ class ConsensusNode(IConsensusNode):
                                 self.is_leader = True
                                 self.leader_is_chosen = True
                                 self.udp_multicast("TOKEN","TERM",self.con_nodes)
-                                print(f"\n=================================\n{i} IS THE LEADER")
+                                print(f"\n=================================\nNode ID {i} IS THE LEADER")
                     else: # Message is terminate, so exit ChangRoberts
                         self.leader_is_chosen = True
                         return
@@ -220,45 +198,38 @@ class ConsensusNode(IConsensusNode):
         global PROPOSERS, ACCEPTORS, LEARNERS
         
         # Detect if n-1st (final) con node
-        #con_nodes = list(filter(lambda x: x[2] == "con", self.hosts))
         if self.is_leader:
-            #print("\n================================")
             # If this is true, this node is the "consensus master"
             # It is responsible for delegating proposer/acceptor/learner roles
             
             time.sleep(0.05) # Wait for other nodes to initialize
-            # TODO: Wait in a better way than sleeping
             
             idx = 0
             # Recall self.hosts[idx][0] is the hostname of the idxth host, 1 is the port
             for i in range(PROPOSERS):
-                #print(f"Node {idx} is a PROPOSER")
                 self.udp_send("ROLE","PROPOSER",self.hosts[idx][0],self.hosts[idx][1])
                 self.proposers.append(idx)
                 idx += 1
             for i in range(ACCEPTORS):
-                #print(f"Node {idx} is an ACCEPTOR")
                 self.udp_send("ROLE","ACCEPTOR",self.hosts[idx][0],self.hosts[idx][1])
                 self.acceptors.append(idx)
                 idx += 1
             for i in range(LEARNERS):
-                #print(f"Node {idx} is a LEARNER")
                 self.udp_send("ROLE","LEARNER",self.hosts[idx][0],self.hosts[idx][1])
                 self.learners.append(idx)
                 idx += 1
             # By this setup, the n-1st node is always a learner (message above gets lost, but that is OK and the idx append is still needed)
             self.role = "LEARNER"
-            #print(f"Node {self.uid} has accepted role {self.role}")
 
-            time.sleep(0.1)
-            if DEBUG: print("NOTIFYING CLIENT NODE TO BEGIN PROPOSALS")
             # After a brief wait to get everyone else situated, we allow the initialization to end
+            time.sleep(0.1) 
+            if DEBUG: print("NOTIFYING CLIENT NODE TO BEGIN PROPOSALS")
+            
         else: # If not the last node, then wait to learn role
             with socket(AF_INET, SOCK_DGRAM) as udp_socket:
                 try:
                     udp_socket.bind(("", self.port))
                     while True:
-                        
                         # Receive and deserialize messages
                         # Message is a dictionary with keys HEADER, MESSAGE, RECIPIENT, and PORT
                         message, client_address = udp_socket.recvfrom(BUFFER_SIZE)
@@ -268,9 +239,6 @@ class ConsensusNode(IConsensusNode):
                         else:
                             self.role = message["MESSAGE"]
                             return
-                        #print(f"Node {self.uid} has accepted role {self.role}")
-                        #print(f"Message received @ {self.uid}:",message)
-                        
                 finally:
                     udp_socket.close()
             
@@ -280,7 +248,6 @@ class ConsensusNode(IConsensusNode):
         print(f"Node ID {self.uid} is running as a {self.role}")
 
         # For all hosts, set up a FIFO queue for incoming connections
-        # TODO
         self.queue_listener = Thread(target=self.queue_listen, name=f"queue_listener{self.uid}:{self.port}")
         self.queue_listener.start()
 
@@ -291,29 +258,29 @@ class ConsensusNode(IConsensusNode):
         # The leader should notify the clients and consensus nodes of the role assignments (after a brief delay)
         if (self.is_leader):
             self.udp_multicast("START",(self.proposers,self.acceptors,self.learners),self.hosts)
-            #print(self.hosts)
-        # TODO: Allow for choosing of a specific proposer
-        
         
 
     def CleanupNode(self) -> None:
+        # No need to implement this for basic Paxos; may be implemented in the future
         pass
 
-    
 
     def queue_listen(self) -> None:
         """
         Listen for and handle updates to the request queue.
+
+        This function handles the majority of the Paxos logic.
         """
         while True:
             if len(self.message_queue) > 0:
+                # First receive any messages in the queue that need to be handled
                 message = self.message_queue.pop(0)
-                #print(message)
 
                 # TODO mutex
 
-                # Check if the leader is sending role assignments
-                # TODO make sure this gets seen first
+                # The leader sends all role assignments in a START message
+                # Each node keeps a local copy of this
+                # After receipt of this message, other messages may be completed
                 if message["HEADER"] == "START":
                     roles_tuple = message["MESSAGE"]
                     self.proposers = [self.hosts[i] for i in roles_tuple[0]]
@@ -323,7 +290,7 @@ class ConsensusNode(IConsensusNode):
 
                 # Check if a terminate message is sent
                 if message["HEADER"] == "TERM":
-                    os._exit(0)
+                    os._exit(0) # Exit program and all threads
 
 
                 # Check if a message is being forwarded from a client
@@ -358,20 +325,22 @@ class ConsensusNode(IConsensusNode):
                         this tells the proposer to send ACCEPT messages w/ value v1 rather than v
                         (alternatively, a nack can be sent)
                     """
+
                     """
                     #######################
-                    # FAILURE TEST
-                    # Note that w/ 2 acceptors total and 1 failing, a "majority" can technically be reached among the alive acceptors, although its value is never relayed to learners
-                    if self.uid == 3 or self.uid == 4 or self.uid == 1: # Change these UIDs to any value
-                        exit(0)
+                    # TODO: ADD FAILURE TESTS HERE
+                    # Change these UIDs to any value
+                    if self.uid == 5 or self.uid == 6: 
+                        os._exit(0)
                     #######################
                     """
-                    # First decode the proposal as a tuple (v,n)
+
+                    # Decode the proposal as a tuple (v,n)
                     (v,n) = message["MESSAGE"]
                     if DEBUG: print(f"An {self.role} (ID {self.uid}) received {v} @ seq {n}")
                     
                     # Check if n is the largest sequence number received
-                    # The next two lines are for safety purposes
+                    # The list copy is done for safety purposes
                     temp = self.promises.copy()
                     temp.append((v,n))
                     greater_proposals = list(filter(lambda x: x[1] > n, temp))
@@ -393,15 +362,12 @@ class ConsensusNode(IConsensusNode):
                             # Note that (max_tuple[0],max_tuple[1]) corresponds to (vx,nx) of the highest nx accepted
                             if DEBUG: print("SENDING (n,v,n') ACK")
                             self.udp_send("ACK",ack,"localhost",rec_port)
-                            #self.udp_multicast("ACK",ack,self.proposers)
                         else:    
                             # No accepted values, so just ack the n and v we were sent
                             ack = (n,v,"_")
                             self.promises.append((v,n))
-                            # TODO udp_send to sender, not localhost
                             if DEBUG: print("SENDING (n,v,_) ACK")
                             self.udp_send("ACK",ack,"localhost",rec_port)
-                            #self.udp_multicast("ACK",ack,self.proposers)
                     else: # There was a greater proposal - send a NACK
                         if DEBUG: self.udp_send("NACK",(v,n),"localhost",rec_port)
                 
@@ -409,13 +375,12 @@ class ConsensusNode(IConsensusNode):
                 if message["HEADER"] == "NACK":
                     if self.role != "PROPOSER":
                         raise Exception(f"Message sent to incorrect recipient: {message}")
-                    if BACKOFF: # Note refusing to send more requests is better for performance
+                    # Backoff can be unpredictably very inefficienct; it is not recommended
+                    # The use of NACKs generally avoids race conditions so backoff is not required
+                    if BACKOFF:
                         (v,n) = message["MESSAGE"]
-                        #if DEBUG: 
-                        print(f"NACK RECV ON {(v,n)} - RESENDING AFTER TIMEOUT")
                         # Send a message to self to "reforward" from client (retry)
-                        # TODO: Backoff
-                        time.sleep(random.choice([0.05*x for x in range(20)]))
+                        time.sleep(random.choice([0.05*x for x in range(20)])) # Wait a small random amount of time
                         self.udp_send("FWD",v,"localhost",self.port) # self on self.port since we are sending to self
 
 
@@ -427,7 +392,6 @@ class ConsensusNode(IConsensusNode):
                     An ack(n,v,n') is received from an acceptor and this determines the contents of the proposer's ACCEPT message.
                     Pseudocode:
                     Store ack(_,_,_) in an ack list.
-                    # TODO is a set needed for majority checking?
                     Check if attached timestamp n forms a majority. If majority:
                         Send ACCEPT(v,n) where v is the value of the highest n ack received
 
@@ -438,20 +402,23 @@ class ConsensusNode(IConsensusNode):
                     (n1,v,n2) = message["MESSAGE"]
                     if DEBUG: print(f"Ack received at {self.role} {self.uid}: {(n1,v,n2)} with acceptances list {self.acceptances}")
                     # Important note: If acceptances not counted in phase 1 are found here, they still need to be accounted for
-                    # This can be done with "ghost" messages TODO
+                    # This can be done with "ghost" messages
+                    
                     min_majority = math.floor(len(self.acceptors)/2) + 1 # The minimum number of acceptors that constitutes a majority
+                    
                     self.acks.append((n1,v,n2))
+
                     # Check if majority has been received for n1 being sent in
                     n1_ack_list = list(filter(lambda x: (x[0]==n1 or x[2]==n1), self.acks))
-                    #print("Phase 2.1",min_majority,self.acks,n1_ack_list)
+                    
                     if len(n1_ack_list) >= min_majority:
                         if DEBUG: print("MAJORITY ACHIEVED BY PROPOSER - SENDING ACCEPT REQUEST TO ALL ACCEPTORS")
                         # The accept message is (v,n)
-                        # Here v is the value of the highest-numbered proposal (TODO does this include this ack???)
+                        # Here v is the value of the highest-numbered proposal
                         # n is n1
 
                         # Find highest n ack received
-                        # Note that ack[2] is always less than or equal to ack[0] (TODO verify), so only check ack[0]
+                        # Note that ack[2] is always less than or equal to ack[0], so only check ack[0]
                         highest_ack = self.acks[0]
                         for ack in self.acks:
                             if ack[0] > highest_ack[0]:
@@ -474,11 +441,7 @@ class ConsensusNode(IConsensusNode):
                             self.udp_multicast("ACCEPT",accept_req,self.acceptors)
                     
                     
-                    
-                    
-
-
-
+                
                 if message["HEADER"] == "ACCEPT":
                     if self.role != "ACCEPTOR":
                         raise Exception(f"Message sent to incorrect recipient: {message}")
@@ -488,7 +451,6 @@ class ConsensusNode(IConsensusNode):
                     Pseudocode:
                     If ack(n,_,_) or ack(_,_,n) found in promise list, ignore.
                     Else accept v and n, and add to the accept list.
-                    Short time wait? TODO
                     Forward values to learner
                     """
 
@@ -521,13 +483,11 @@ class ConsensusNode(IConsensusNode):
                     self.acceptances.append((v,n))
                     min_majority = math.floor(len(self.acceptors)/2) + 1 # The minimum number of acceptors that constitutes a majority
                     # Check if majority has been received for n1
-                    # TODO review
                     acceptance_list = list(filter(lambda x: (x[1]==n), self.acceptances))
                     if DEBUG: print("Acceptances and minimum majority:",len(acceptance_list),min_majority)
                     if len(acceptance_list) >= min_majority:
                         if DEBUG: print("MAJORITY ACHIEVED BY ACCEPTORS.")
                         self.udp_multicast("SET",v,self.cli_nodes)
-                    # TODO needs v of most recently accepted value 
                     
 
     """
@@ -537,7 +497,6 @@ class ConsensusNode(IConsensusNode):
         # group is a list of hosts (lists) [[hostname,port,type],...]
         for rec in group:
             self.udp_send(header, message, rec[0], int(rec[1]))
-
 
 
     def udp_send(self, header: str, message, recipient: str, port: int) -> None:
@@ -550,7 +509,6 @@ class ConsensusNode(IConsensusNode):
             recipient (str): The hostname of the recipient
             port (int): The port of the recipient 
         """
-        #time.sleep(random.random()*0.01)
         # Define and serialize the message to byte form before sending
         message =   {
                         'HEADER': header,
@@ -565,7 +523,6 @@ class ConsensusNode(IConsensusNode):
         with socket(AF_INET, SOCK_DGRAM) as udp_socket:
             udp_socket.sendto(message, (recipient, int(port)))
     
-
 
     def udp_listen(self) -> None:
         """
@@ -592,4 +549,3 @@ class ConsensusNode(IConsensusNode):
                         self.message_queue.append(message) # TODO mutex
             finally:
                 udp_socket.close()
-                    

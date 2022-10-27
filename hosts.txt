@@ -1,7 +1,12 @@
 PROPOSERS 1
-ACCEPTORS 1
+ACCEPTORS 3
 LEARNERS 1
 localhost 10000 con
 localhost 10001 con
 localhost 10002 con
-localhost 10003 cli
+localhost 10003 con
+localhost 10004 con
+localhost 10005 cli
+localhost 10006 cli
+localhost 10007 cli
+localhost 10008 cli

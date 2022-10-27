@@ -1,8 +1,5 @@
 # Basic Paxos in Python
-This is a Python library implementing the basic Paxos algorithm.
-
-### Important Note
- If a client does not print out its received value, it does not necessarily mean the algorithm broke. There is a recurring bug where the client doesn't get the message (possibly from network, concurrency, or I/O failures), but the consensus value is in fact set (the debug logs can prove this). If this happens, just run the script again.
+This is a Python library implementing the basic Paxos algorithm. It also implements the Chang-Roberts leader election algorithm.
 
 ## Testing
 ### The shell file
@@ -67,6 +64,8 @@ if self.uid == 3 or self.uid == 4 or self.uid == 1:
 ```
 and change the UID values to your preference.
 
+For more detailed console traces, flip the `DEBUG` global variable in `consensus.py`. Note that these messages are not necessarily in correct order.
+
 
 ## Design
 ### The driver files
@@ -91,23 +90,29 @@ After this, the learner will `break` from its listener while loop (note that thi
 
 The `consensus.py` file implements the `ConsensusNode` class. It has some complex logic in it, so this documentation will only cover its design at a high level. On initialization, the line `self.ChangRoberts()` is run which uses the Chang-Roberts leader election algorithm (as described on page 230, Chapter 11 in Ghosh) to select a leader. This is done by embedding a ring topology using modular arithmetic on the UIDs.
 
-The leader then broadcasts to the consensus nodes that a leader has been chosen, and the non-leader consensus nodes wait to be assigned their roles. The leader then assigns their roles (proposer, acceptor, or learner), and broadcasts a `START` message to *all* nodes, which informs the clients they can message the proposers. In the initialization period, each consensus node also sets up a 
+The leader then broadcasts to the consensus nodes that a leader has been chosen, and the non-leader consensus nodes wait to be assigned their roles. The leader then assigns their roles (proposer, acceptor, or learner), and broadcasts a `START` message to *all* nodes, which informs the clients they can message the proposers. In the initialization period, each consensus node also sets up a listener thread and a listening queue. The listening thread pushes to the queue.
 
-After the proposers 
+Sequence numbers are handled as follows: every node's initial sequence number is its ID. Every time it makes a proposal, it increases its sequence number by the length of the number of hosts. This creates a monotonically increasing disjoint sequence of numbers for each consensus node, as Paxos requires.
+
+The queue processes the message headers; the ones specific to Paxos are `FWD` which initiates phase 1.1, `PROPOSAL` which runs phase 1.2, `ACK`, which runs 2.1, `ACCEPT`, which runs 2.2, and `LEARN`, which runs phase 3 and is the last step where learner nodes receive accepted values and check for a majority. The algorithm is implemented exactly as described in the Ghosh textbook. Please see the comments in `consensus.py` for pseudocode and specific details.
+
+`NACK` messages are sent to discourage proposers from trying again by raising their sequence numbers. Note that if the global variable `BACKOFF` is set to true, then after a short random wait, the node will try again. This is not needed as race conditions are highly unlikely with the implementation style. It is not recommended to use this setting as it stalls performance significantly.
 
 Note that there are some small `time.sleep(n)` lines throughout which are for safety and concurrency purposes (this is not the best practice, but it suffices for this project).
 
 
 
-## Assumptions
+## Assumptions and Notes
 
-- No failures in the initialization; we assume the initialization is fully complete before any proposals are sent
-- Each consensus node is exactly 1 role
-- There is always at least one learner; the n-1st consensus-node will always be given the role learner (the n-1st node gets designated the leader by Chang-Roberts)
-- Machines are all on the same network (hostname is always "localhost")
-- In IDs, consensus-nodes always come before client-nodes
-- No proposer nodes fail
-- The majority of acceptor nodes do not fail
-
-- Possible bug w/ backoff taking a long time. Also, sometimes messages get mismatched for an unknown reason. These are rare occurrences.
-
+- No failures in the initialization; we assume the initialization is fully complete before any proposals are sent. We also assume there are no concurrency issues or incorrect message sequences.
+- The program is tested with up to 11 consensus nodes of various permutations, and 4 client nodes submitting to different proposers. It is unknown how well the program scales so we assume a low number of consensus nodes until further testing.
+- Note that there is a significant amount of redundancy in this model. This is why the "Final message received" by clients is printed more times than there are clients. This is expected.
+- Each consensus node is exactly 1 role.
+- There is always at least one learner; the n-1st consensus-node will always be given the role learner (the n-1st node gets designated the leader by Chang-Roberts).
+- Machines are all on the same network (hostname is always "localhost").
+- Consensus node IDs are always lower numbered than client node IDs.
+- No proposer nodes fail.
+- The majority of acceptor nodes do not fail; for 2m+1 acceptor nodes, this implementation can handle a maximum of m acceptor nodes failing.
+- It is highly discouraged to flip the `BACKOFF` global variable on; race conditions are avoided with `NACK` messages so this is not needed and only introduces redundant message sending. Regardless, the `BACKOFF` functionality does exist in the program.
+- In rare occurrences, due to network or concurrency failures, messages may be mismatched causing Byzantine failures. An exception will be thrown whenever possible, and in this case just restart the program.
+- If a client does not print its value, it may be due to one of the failures mentioned above. This does not always mean consensus has not been reached among the acceptors (the debug logs can prove this). Again, in this case, just restart the program. Note that these occurrences are rare.
