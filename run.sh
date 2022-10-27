@@ -1,7 +1,5 @@
 #!/bin/bash
-
-# TODO silence error messages
-pkill -f python
+pkill -f python 2>/dev/null
 
 # Update hosts.txt (must match consensus drivers list below this section)
 echo "PROPOSERS 1" > hosts.txt
@@ -24,11 +22,11 @@ echo "localhost 10008 cli" >> hosts.txt
 # Argument format is [UID] [IS_LAST_NODE]
 # UIDs must be from 0 to n-1
 
-python3 condriver.py 0 false &
-python3 condriver.py 1 false &
-python3 condriver.py 2 false &
-python3 condriver.py 3 false &
-python3 condriver.py 4 true &
+python3 condriver.py 0 &
+python3 condriver.py 1 &
+python3 condriver.py 2 &
+python3 condriver.py 3 &
+python3 condriver.py 4 &
 
 # Ensure the last condriver has "true" set for its final flag 
 # and that it is run after all the others
@@ -37,7 +35,7 @@ python3 condriver.py 4 true &
 # Note that proposers cannot be determined here since they are decided amongst the processes themselves during runtime
 # Argument format is [UID] [V] where V is the value the client wants to assign the global variable
 
-python3 clidriver.py 5 55 &
-python3 clidriver.py 6 56 &
-python3 clidriver.py 7 57 &
-python3 clidriver.py 8 230
+python3 clidriver.py 5 55 1 &
+python3 clidriver.py 6 56 1 &
+python3 clidriver.py 7 57 1 &
+python3 clidriver.py 8 230 1 &

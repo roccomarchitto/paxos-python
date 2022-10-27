@@ -11,6 +11,7 @@ import math
 from socket import *
 from threading import Thread, Lock
 import os
+import sys
 import pickle
 import time
 import random
@@ -70,8 +71,9 @@ class ClientNode():
                     message = pickle.loads(message)
                     if message["HEADER"] == "SET":
                         chosen_value = message["MESSAGE"]
-                        #time.sleep(.1)
+                        #time.sleep(1)
                         print("Final message received by client from learner:",chosen_value)
+                        break
                     else:
                         raise Exception("Message sent before start to client, or corrupted/incorrect.")
                 
@@ -95,7 +97,7 @@ class ClientNode():
                     #print("Proposers list received:",proposers)
                     
                     proposer_idx = self.proposer % len(proposers)
-                    print("Chosen proposer idx:",proposer_idx)
+                    #print("Chosen proposer idx:",proposer_idx)
                     self.chosen_proposer = proposers[proposer_idx]
                     #print(self.chosen_proposer)
 
@@ -106,7 +108,16 @@ class ClientNode():
             finally:
                 udp_socket.close()
 
-
+    def CleanupNode(self) -> None:
+        """
+        When a consensus is reached, at least one client will progress to call CleanupNode.
+        This will signal all processes to shut down.
+        """
+        time.sleep(5)
+        # Multicast TERM messages
+        for host in self.hosts:
+            self.udp_send("TERM","","localhost",host[1])
+        os._exit(0)
 
     def udp_send(self, header: str, message, recipient: str, port: int) -> None:
         """

@@ -36,3 +36,4 @@ if __name__ == "__main__":
     node.InitializeNode() # Wait to receive list of proposers
     # Now with the list of proposers, we can choose one and send a proposal
     node.Set(VAL) # Attempt to set the global variable to VAL
+    node.CleanupNode()

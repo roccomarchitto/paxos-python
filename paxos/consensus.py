@@ -11,6 +11,8 @@ TODO: README (after done)
 TODO: Cleanup
 TODO: Silence run.sh errors
 
+TODO: Non termination bug
+
 """
 from __future__ import annotations
 import abc
@@ -18,6 +20,7 @@ import math
 from socket import *
 from threading import Thread, Lock
 import os
+import sys
 import pickle
 import time
 import random
@@ -30,7 +33,7 @@ LEARNERS = -1
 
 DEBUG = False
 
-BACKOFF = False
+BACKOFF = True
 
 class IConsensusNode(abc.ABC):
     """
@@ -108,7 +111,7 @@ class ConsensusNode(IConsensusNode):
         
         while not self.leader_is_chosen:
             continue
-        print(f"LEADER CONSENSUS: {self.uid},{self.is_leader}")
+        if DEBUG: print(f"LEADER CONSENSUS: {self.uid},{self.is_leader}")
         #time.sleep(0.5) # Give a little time so messages are not mismatched
         #exit(0)
 
@@ -205,7 +208,7 @@ class ConsensusNode(IConsensusNode):
                                 self.is_leader = True
                                 self.leader_is_chosen = True
                                 self.udp_multicast("TOKEN","TERM",self.con_nodes)
-                                print(f"{i} IS THE LEADER")
+                                print(f"\n=================================\n{i} IS THE LEADER")
                     else: # Message is terminate, so exit ChangRoberts
                         self.leader_is_chosen = True
                         return
@@ -219,7 +222,7 @@ class ConsensusNode(IConsensusNode):
         # Detect if n-1st (final) con node
         #con_nodes = list(filter(lambda x: x[2] == "con", self.hosts))
         if self.is_leader:
-            print("\n================================")
+            #print("\n================================")
             # If this is true, this node is the "consensus master"
             # It is responsible for delegating proposer/acceptor/learner roles
             
@@ -274,7 +277,7 @@ class ConsensusNode(IConsensusNode):
 
     def Run(self) -> None:
         # First set up a listener thread for incoming messages
-        print(f"Running {self.uid} as a {self.role}")
+        print(f"Node ID {self.uid} is running as a {self.role}")
 
         # For all hosts, set up a FIFO queue for incoming connections
         # TODO
@@ -318,6 +321,11 @@ class ConsensusNode(IConsensusNode):
                     self.learners = [self.hosts[i] for i in roles_tuple[2]]
 
 
+                # Check if a terminate message is sent
+                if message["HEADER"] == "TERM":
+                    os._exit(0)
+
+
                 # Check if a message is being forwarded from a client
                 # This will initiate Paxos phase 1.1
                 if message["HEADER"] == "FWD":
@@ -352,9 +360,9 @@ class ConsensusNode(IConsensusNode):
                     """
                     """
                     #######################
-                    # FAILURE TEST TODO
-                    # Note that w/ 2 acceptors and 1 failing, a "majority" is technically reached among the acceptor, although its value is never relayed to learners
-                    if self.uid == 3 or self.uid == 4 or self.uid == 1:
+                    # FAILURE TEST
+                    # Note that w/ 2 acceptors total and 1 failing, a "majority" can technically be reached among the alive acceptors, although its value is never relayed to learners
+                    if self.uid == 3 or self.uid == 4 or self.uid == 1: # Change these UIDs to any value
                         exit(0)
                     #######################
                     """
@@ -395,7 +403,7 @@ class ConsensusNode(IConsensusNode):
                             self.udp_send("ACK",ack,"localhost",rec_port)
                             #self.udp_multicast("ACK",ack,self.proposers)
                     else: # There was a greater proposal - send a NACK
-                        self.udp_send("NACK",(v,n),"localhost",rec_port)
+                        if DEBUG: self.udp_send("NACK",(v,n),"localhost",rec_port)
                 
 
                 if message["HEADER"] == "NACK":
@@ -493,9 +501,8 @@ class ConsensusNode(IConsensusNode):
                         # Send to the learner since no greater promises were made
                         self.udp_multicast("ACCEPT-VALUE",(v,n),self.proposers) # TODO handle
                         self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
-                        if DEBUG: print(f"{(v,n)} HAS BEEN ACCEPTED")
+                        if DEBUG: print(f"{(v,n)} HAS BEEN ACCEPTED",self.learners)
                     else:
-                        # TODO - possible bug w/ greater promises sometimes not coming through
                         if DEBUG: print(f"Accept request rejected {self.role} (ID {self.uid}): {message}")
 
 
@@ -543,7 +550,7 @@ class ConsensusNode(IConsensusNode):
             recipient (str): The hostname of the recipient
             port (int): The port of the recipient 
         """
-        #time.sleep(0.01)
+        #time.sleep(random.random()*0.01)
         # Define and serialize the message to byte form before sending
         message =   {
                         'HEADER': header,
@@ -576,7 +583,11 @@ class ConsensusNode(IConsensusNode):
                     # If a proposer is receiving accept messages, bypass queue
                     if message["HEADER"] == "ACCEPT-VALUE":
                         if DEBUG: print(f"Proposer received notice of accepted value: (ID {self.uid}) received {message}")
-                        self.acceptances.append(message["MESSAGE"])
+                        (v,n) = message["MESSAGE"]
+                        self.acceptances.append((v,n))
+                        # Forward to learner (this is added redundancy due to possible network/concurrency failure, see documentation)
+                        self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
+
                     else: # Else add to the message queue
                         self.message_queue.append(message) # TODO mutex
             finally:

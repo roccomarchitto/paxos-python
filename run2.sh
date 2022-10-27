@@ -2,6 +2,7 @@
 
 # TODO silence error messages
 pkill -f python
+sleep 0.1
 
 # Update hosts.txt (must match consensus drivers list below this section)
 echo "PROPOSERS 5" > hosts.txt
@@ -24,6 +25,9 @@ echo "localhost 10012 cli" >> hosts.txt
 echo "localhost 10013 cli" >> hosts.txt
 echo "localhost 10014 cli" >> hosts.txt
 echo "localhost 10015 cli" >> hosts.txt
+echo "localhost 10016 cli" >> hosts.txt
+echo "localhost 10017 cli" >> hosts.txt
+echo "localhost 10018 cli" >> hosts.txt
 
 #############################################################
 
@@ -31,17 +35,17 @@ echo "localhost 10015 cli" >> hosts.txt
 # Argument format is [UID] [IS_LAST_NODE]
 # UIDs must be from 0 to n-1
 
-python3 condriver.py 0 false &
-python3 condriver.py 1 false &
-python3 condriver.py 2 false &
-python3 condriver.py 3 false &
-python3 condriver.py 4 false &
-python3 condriver.py 5 false &
-python3 condriver.py 6 false &
-python3 condriver.py 7 false &
-python3 condriver.py 8 false &
-python3 condriver.py 9 false &
-python3 condriver.py 10 true &
+python3 condriver.py 0 &
+python3 condriver.py 1 &
+python3 condriver.py 2 &
+python3 condriver.py 3 &
+python3 condriver.py 4 &
+python3 condriver.py 5 &
+python3 condriver.py 6 &
+python3 condriver.py 7 &
+python3 condriver.py 8 &
+python3 condriver.py 9 &
+python3 condriver.py 10 &
 
 # Ensure the last condriver has "true" set for its final flag 
 # and that it is run after all the others
@@ -54,4 +58,7 @@ python3 clidriver.py 11 55 0 &
 python3 clidriver.py 12 56 1 &
 python3 clidriver.py 13 57 2 &
 python3 clidriver.py 14 57 3 &
-python3 clidriver.py 15 230 4 &
+python3 clidriver.py 15 230 1 &
+python3 clidriver.py 16 231 45 &
+python3 clidriver.py 17 232 41 &
+python3 clidriver.py 18 233 10 &
