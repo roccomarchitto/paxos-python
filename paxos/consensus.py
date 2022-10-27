@@ -24,6 +24,8 @@ DEBUG = False
 
 BACKOFF = False
 
+queue_lock = Lock() # Global mutex lock for the listener queue
+
 class IConsensusNode(abc.ABC):
     """
     Core Paxos consensus methods
@@ -138,7 +140,7 @@ class ConsensusNode(IConsensusNode):
         self.crlistener.start()
 
         # After a brief wait, forward initial token
-        time.sleep(0.05)
+        time.sleep(0.1)
         self.udp_send("TOKEN",self.uid,"localhost",rec_port)
 
     def ChangRobertsListener(self) -> None:
@@ -274,9 +276,11 @@ class ConsensusNode(IConsensusNode):
         while True:
             if len(self.message_queue) > 0:
                 # First receive any messages in the queue that need to be handled
-                message = self.message_queue.pop(0)
-
-                # TODO mutex
+                queue_lock.acquire()
+                try:
+                    message = self.message_queue.pop(0)
+                finally: 
+                    queue_lock.release()
 
                 # The leader sends all role assignments in a START message
                 # Each node keeps a local copy of this
@@ -358,7 +362,7 @@ class ConsensusNode(IConsensusNode):
                                 if t[1] > max_tuple[1]:
                                     max_tuple = t
                             ack = (n,max_tuple[0],max_tuple[1]) # Discard old values, replace w/ already accepted values
-                            self.promises.append((max_tuple[0],max_tuple[1])) # TODO is this right?
+                            self.promises.append((max_tuple[0],max_tuple[1]))
                             # Note that (max_tuple[0],max_tuple[1]) corresponds to (vx,nx) of the highest nx accepted
                             if DEBUG: print("SENDING (n,v,n') ACK")
                             self.udp_send("ACK",ack,"localhost",rec_port)
@@ -461,8 +465,8 @@ class ConsensusNode(IConsensusNode):
                     greater_promises = list(filter(lambda x: x[1] > n, self.promises))
                     if len(greater_promises) == 0:
                         # Send to the learner since no greater promises were made
-                        self.udp_multicast("ACCEPT-VALUE",(v,n),self.proposers) # TODO handle
-                        self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
+                        self.udp_multicast("ACCEPT-VALUE",(v,n),self.proposers)
+                        self.udp_multicast("LEARN",(v,n),self.learners) 
                         if DEBUG: print(f"{(v,n)} HAS BEEN ACCEPTED",self.learners)
                     else:
                         if DEBUG: print(f"Accept request rejected {self.role} (ID {self.uid}): {message}")
@@ -543,9 +547,13 @@ class ConsensusNode(IConsensusNode):
                         (v,n) = message["MESSAGE"]
                         self.acceptances.append((v,n))
                         # Forward to learner (this is added redundancy due to possible network/concurrency failure, see documentation)
-                        self.udp_multicast("LEARN",(v,n),self.learners) # TODO also multicast to proposers
+                        self.udp_multicast("LEARN",(v,n),self.learners)
 
                     else: # Else add to the message queue
-                        self.message_queue.append(message) # TODO mutex
+                        queue_lock.acquire()
+                        try:
+                            self.message_queue.append(message)
+                        finally: 
+                            queue_lock.release()
             finally:
                 udp_socket.close()

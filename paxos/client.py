@@ -52,7 +52,6 @@ class ClientNode():
         time.sleep(0.1) # Wait a short time for other nodes to prep
         VAL = int(VAL)
         assert(self.v == VAL)
-        #print(f"Client {self.uid} forward VALUE {VAL} to proposer {self.hosts[self.chosen_proposer]}")
         self.udp_send("FWD",VAL,self.hosts[self.chosen_proposer][0],self.hosts[self.chosen_proposer][1])
         self.wait() # Wait for a value to arrive
     
@@ -60,7 +59,6 @@ class ClientNode():
         """
         Waits for a decided on value to arrive
         """
-        # TODO - while loop?
         with socket(AF_INET, SOCK_DGRAM) as udp_socket:
             try:
                 udp_socket.bind(("", self.port))
@@ -71,7 +69,6 @@ class ClientNode():
                     message = pickle.loads(message)
                     if message["HEADER"] == "SET":
                         chosen_value = message["MESSAGE"]
-                        #time.sleep(1)
                         print("Final message received by client from learner:",chosen_value)
                         break
                     else:
@@ -94,14 +91,8 @@ class ClientNode():
                 if message["HEADER"] == "START":
                     roles_tuple = message["MESSAGE"]
                     proposers = roles_tuple[0]
-                    #print("Proposers list received:",proposers)
-                    
                     proposer_idx = self.proposer % len(proposers)
-                    #print("Chosen proposer idx:",proposer_idx)
                     self.chosen_proposer = proposers[proposer_idx]
-                    #print(self.chosen_proposer)
-
-                    #print("Client now preparing to submit proposals...")
                 else:
                     raise Exception("Message sent before start to client, or corrupted/incorrect.")
                 
